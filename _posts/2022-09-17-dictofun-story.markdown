@@ -50,12 +50,66 @@ hardware issues, so I had to do soldering work in the field (btw, it's almost li
 suddenly have decided to move from analog microphone to PDM-based (to avoid all noise-related issues). Second issue - by doing so, we forgot that we had an RC chain on the data 
 lane, and at one point we had saturation issues for the signal. 
 
-Another issue that I had to suddenly address in the field was the filesystem. I wanted to use a media-agnostic file system from the internet, but eventually we haven't managed to
+Another issue that I had to suddenly address in the field was the filesystem. I wanted to use a MCU-agnostic file system from the internet, but eventually we haven't managed to
 bring it up on Nordic. It was kind of working, but with so many issues that I had to make a decision to divert to self-developed simple storage. Spoiler: file system issues followed
 me all the way until the end of the project. 
 
 Hackathon took about 3 days. Eventually we have been able to perform a simple demo that basically has been just a straight line operation in the pipeline. Instead of file system we
 used a raw write to the flash memory, file has been erased right after the transmission, transmission has been sometimes failing, and we were satisfied with just showing the transcribed
-text on the screen of the phone. No restarts were possible, no timeouts were implemented, and many other aspects have been ignored.
+text on the screen of the phone. No restarts were possible, no timeouts were implemented, and many other aspects have been ignored. The only focus of the hackathon has been to bring 
+up a PoC, which has basically succeeded.
 
 # Pareto Principle
+
+Soon after the hackathon was the time when I experienced the full scale of Pareto's law. PoC has been done, and I continued development of both hardware and firmware. I was considering
+to reuse the SW developed on the hackathon, but eventually it has been easier to rewrite it completely. I made couple mistakes at this stage: the architecture hasn't been optimized for
+quick experiments. In terms of the pipeline the main problem has been the file system, the rest of the pipeline has been mostly reused. In terms of hardware the main changes have been 
+related to the battery charger subsystem and to testability of the hardware. There are still couple things missing from making it a close-to-perfect hardware: I would add an RTC chip
+into it and add a digital latch circuit for powering the device off. 3 hardware revisions and software development took about a year of slow after-work and weekend work, with big 
+delays related to a) development of iOS application and b) russian invasion into Ukraine. So it took roughly 8 working days to design, produce, bring up and develop the demo and about
+20-30 working days to rework it to be able to store several records, transfer them to iPhone and get rid of all sporadic errors. Spoiler: sporadic errors are still in place. 
+
+# Hardware design
+
+The system is built around Nordic NRF52832. PDM microphone is the input device, so is the button. Data is stored to SPI NOR flash chip with 16 MBytes of memory. Also on board there is a RGB-LED,
+LDO, latching circuit and a battery charger circuit. All buses have test points that are put on the bottom of the board, together with several power-related testpoints. This allowed to introduce
+a bed of nails used for development purposes. First revisions have been using direct soldering on the PCB of wires related to console and JTAG, but I have decided to experiment and designed a 
+bed of nails.
+
+# Software design
+
+Probably my biggest problem has been usage of Segger Embedded Studio as a build system. It may have been a good idea to utilize CMake/Bazel at the start in order to make the build process 
+easier for other developers. 
+Software for Dictofun is written using C++. No operating system is used, all operations are happening in the while-loop in the main function. There are three big SW modules that I called "tasks".
+Main module is `task_state`, which is responsible for operation of the main state machine of the software. `task_audio` contains functions related to audio processing (technically there is no
+processing, only repacking of audio frames to filesystem). `task_led` is responsible for blinking RGB LED, depending on the current state. Initial idea has been to split these tasks in order
+to be able later to integrate FreeRTOS.
+
+The most controversial aspect of the whole project is the filesystem. I have been attempting to use `littlefs` and few other filesystems designed for SPI flash memories. Eventually all of these 
+systems have been triggering erase operation during the write of the record. I later came up with an idea on how to work it around without tweaking the FS, but at the time when I needed this FS
+I have made a decision to design a "streaming" filesystem that would not be calling erase functions by design. I know the rule "don't write your own libs unless you really know what you do". 
+My main idea has been that most operating systems out there are designed to be universal and not targeting at such streaming use-cases (even though the data stream has been not really huge,
+just 24 kbytes/sec, SPI flash has been running at 1 MHz). I think this FS is the candidate #2 or #3 for refactoring (after introduction of build system and a console). Anyway, it has a weird API,
+and to some extent it does work. 
+
+File transfer protocol over BLE is also a big source of pain. It was inherited from a demo project of Nordic, where they use this protocol to stream photos from an evalboard to the phone. 
+To be honest, it's just now is the time when I thought of it as of "protocol over BLE". It's just 3-4 characteristics, one for sending commands and two-three others to transfer the data of 
+different types (notify function of BLE characteristic has been utilized). My biggest mistake here is probably that I only have been running this protocol only within the system "dictofun-phone". 
+Right way to do it is probably to have a protocol that is easier to split to small pieces and use a media that is easy to analyze on the opposite side. It should be possible to debug the protocol
+all the way to small radio packets sent over BLE, otherwise it's not possible to build an efficient protocol for 2-3 platforms. I have tried to use a BLE sniffer, but haven't manage to use it in
+a convenient enough way. 
+
+How would I've done it now? This functionality should be initially developed and tested on a separate bench with evalboard on one side and something like a Raspberry PI on the other side, with 
+a full analysis of inbound and outbound BLE traffic, with timestamps and all possible flags that are used within BLE. Same setup should be used for development of this protocol between RPi and phone,
+so other role is launched and tested on the RPi. This way one can assure that no surprises show up in an invisible way (fortunately there is enough help in the internet to debug BLE).
+
+Another big thing where I have missed the RTOS is the communication between the modules. I think queues from FreeRTOS could've been very helpful. I had to pass the same file between several components
+of the system to pass the signals. Basically all communication has consisted of direct calls of particular methods of particular objects. Probably queue-based system could've been more robust in this
+case.
+
+
+# Current problems
+
+Main issue - battery lifetime. Power consumption is not optimized. The easiest way to reduce power consumption is by integrating an audio codec into the pipeline. Currently data is
+recorded at rate of 24 kbytes/sec, being stored in raw WAV format into flash memory. Voice codec should be capable of reducing the amount of written data significantly, which should
+result in shorter file transaction times and thus less active radio time and less power consumption.
