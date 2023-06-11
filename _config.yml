@@ -22,7 +22,7 @@ title: R+B Blog
 #email: rundb@users.noreply.github.com
 description: >- 
   Personal technical blog of Roman T.
-baseurl: "/blog" 
+
 url: "https://rundb.github.io"
 github_username:  rundb
 
