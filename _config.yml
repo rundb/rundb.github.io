@@ -19,17 +19,25 @@
 # in the templates via {{ site.myvariable }}.
 
 title: R+B Blog
-email: rundb@users.noreply.github.com
+#email: rundb@users.noreply.github.com
 description: >- 
-  Personal technical blog of rundb
+  Personal technical blog of Roman T.
 baseurl: "/blog" 
-url: "rundb.github.io"
+url: "https://rundb.github.io"
 github_username:  rundb
+
+enforce_ssl: rundb.github.io
 
 # Build settings
 theme: minima
 plugins:
   - jekyll-feed
+
+defaults:
+  - scope:
+      path: "assets/images"
+    values:
+      image: true
 
 # Exclude from processing.
 # The following items will not be processed, by default.
